@@ -40,12 +40,34 @@ Then open: `http://localhost:8000`
 - Runtime: Python 3.11
 - Build Command:
   ```bash
-  pip install -r backend/requirements.txt
+  python -m pip install --upgrade pip setuptools wheel && pip install -r backend/requirements.txt
   ```
 - Start Command:
   ```bash
   uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
   ```
+
+
+### If build hangs on NumPy
+Use these Render settings to avoid source builds:
+- **Build Command:**
+  ```bash
+  python -m pip install --upgrade pip setuptools wheel && pip install -r backend/requirements.txt
+  ```
+- **Start Command:**
+  ```bash
+  uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
+  ```
+- **Python version (native runtime):** `3.11.10` via `runtime.txt` (and `PYTHON_VERSION` in `render.yaml`).
+
+Watch build logs for source-build fallback signals:
+- `Downloading numpy-*.tar.gz`
+- `Preparing metadata (pyproject.toml): still running...`
+- `Building wheel for numpy ...`
+
+Healthy first deploys on free tier usually finish dependency install in a few minutes. If NumPy metadata/build steps run for a long time (for example 10+ minutes with repeated metadata/build output), it usually means Render fell back to building from source instead of using a prebuilt wheel.
+
+Rollback note: if any downstream package in your environment requires NumPy 2.x, revert NumPy pin to the previous value and redeploy after confirming wheel availability for your exact Python/runtime combination.
 
 ## API
 - `GET /api/health`
