@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prop Challenge Monte Carlo Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    body{margin:0;font-family:Inter,system-ui;background:radial-gradient(circle at 20% 20%,#1a2250,#070b1a 45%);color:#dbe8ff}
+    .wrap{max-width:1400px;margin:auto;padding:24px}.card{background:#111934dd;border:1px solid #2b3f72;border-radius:16px;padding:14px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}label{display:flex;flex-direction:column;font-size:12px;color:#98aad3;gap:6px}
+    input,select{background:#0b1330;border:1px solid #32487f;color:#fff;border-radius:10px;padding:9px}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}
+    .tabs{display:flex;gap:8px;margin:14px 0}button{background:#233975;color:#fff;border:none;border-radius:10px;padding:9px 12px;cursor:pointer}.ghost{background:transparent;border:1px solid #4f6db6}
+    .charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}.heat{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cell{padding:8px;border-radius:8px;text-align:center;border:1px solid #355181;font-size:12px}
+    @media(max-width:900px){.charts{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Prop Challenge Monte Carlo Dashboard</h1>
+  <p>Probabilistic prop-firm challenge math for pass/fail, attempts, costs, EV, and risk distributions.</p>
+
+  <div class="card">
+    <div class="grid" id="controls"></div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <label><input id="trailing" type="checkbox"> Trailing drawdown</label>
+      <label><input id="static" type="checkbox" checked> Static drawdown</label>
+      <label><input id="block" type="checkbox"> Block resampling</label>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px"><button id="run">Run Monte Carlo</button><button id="csv" class="ghost">Export CSV</button></div>
+  </div>
+
+  <div class="metrics" id="metrics"></div>
+
+  <div class="tabs"><button data-tab="overview">Overview</button><button data-tab="risk">Risk & Monte Carlo</button><button data-tab="dist">Distributions</button><button data-tab="insights">Insights</button></div>
+
+  <div class="charts">
+    <div class="card" id="card1"><h3 id="t1"></h3><canvas id="c1" height="200"></canvas><div id="insights"></div></div>
+    <div class="card" id="card2"><h3 id="t2"></h3><canvas id="c2" height="200"></canvas><div id="heat" class="heat"></div></div>
+    <div class="card full" id="card3" style="display:none"><h3>Monte Carlo Equity Paths</h3><canvas id="c3" height="120"></canvas></div>
+  </div>
+</div>
+<script>
+const api='';
+const fields=[['win_rate','Win Rate %',48],['rr_ratio','RR Ratio',1.6],['risk_per_trade_pct','Risk / Trade %',0.8],['trades_per_attempt','Trades / Attempt',90],['initial_balance','Initial Balance',100000],['pass_threshold_pct','Pass Threshold %',10],['fail_threshold_pct','Fail Threshold %',6],['challenge_cost','Challenge Fee',129],['payout_if_passed','Payout if Passed',5000],['profit_split_pct','Profit Split %',80],['reset_fee','Reset Fee',0],['simulations','Simulations',8000],['seed','Random Seed',7],['animated_paths_count','Animated Paths',80],['maximum_attempts','Max Attempts',40],['winsorisation','Winsorisation',1],['fixed_risk_amount','Fixed Risk $',200]];
+controls.innerHTML=fields.map(([k,l,v])=>`<label>${l}<input id='${k}' type='number' value='${v}'></label>`).join('')+`<label>Risk Model<select id='risk_model'><option value='percent'>% of balance</option><option value='fixed'>Fixed dollar</option></select></label>`;
+let charts=[];let tab='overview';
+function payload(){return{trade_model:{win_rate:+win_rate.value/100,rr_ratio:+rr_ratio.value,risk_per_trade_pct:+risk_per_trade_pct.value/100,risk_model:risk_model.value,fixed_risk_amount:+fixed_risk_amount.value,trades_per_attempt:+trades_per_attempt.value},challenge:{initial_balance:+initial_balance.value,pass_threshold_pct:+pass_threshold_pct.value/100,fail_threshold_pct:+fail_threshold_pct.value/100,challenge_cost:+challenge_cost.value,payout_if_passed:+payout_if_passed.value,profit_split_pct:+profit_split_pct.value/100,reset_fee:+reset_fee.value,trailing_drawdown:trailing.checked,static_drawdown:static.checked},monte_carlo:{simulations:+simulations.value,seed:+seed.value,animated_paths_count:+animated_paths_count.value,winsorisation:+winsorisation.value/100,block_resampling:block.checked,block_size:5,maximum_attempts:+maximum_attempts.value}}}
+function hist(vals,b=20){const min=Math.min(...vals),max=Math.max(...vals),w=(max-min||1)/b,a=Array.from({length:b},(_,i)=>({x:`${Math.round(min+i*w)}`,y:0}));vals.forEach(v=>a[Math.min(Math.floor((v-min)/w),b-1)].y++);return a}
+function metric(label,val){return `<div class='card'><div style='color:#9bb0d8;font-size:12px'>${label}</div><div style='font-size:26px;margin-top:6px'>${val}</div></div>`}
+function draw(res){metrics.innerHTML=res.summary_cards.map(c=>metric(c.label,c.format==='percent'?(c.value*100).toFixed(2)+'%':c.format==='currency'?'$'+Math.round(c.value).toLocaleString():c.value.toFixed(2))).join('');charts.forEach(c=>c.destroy());charts=[];
+const tabs={overview:['Pass vs Fail','Ending Equity Distribution'],risk:['Pass vs Fail','Ending Equity Distribution'],dist:['Max Drawdown Distribution (%)','Trades to Outcome'],insights:['Plain-English Insights','Sensitivity Heatmap (pass probability)']};
+t1.textContent=tabs[tab][0];t2.textContent=tabs[tab][1];insights.innerHTML='';heat.innerHTML='';card3.style.display=tab==='risk'?'block':'none';
+if(tab==='insights'){c1.style.display='none';c2.style.display='none';insights.innerHTML='<ul>'+res.insights.map(i=>`<li>${i}</li>`).join('')+'</ul>';res.sensitivity.forEach(cell=>{const d=document.createElement('div');d.className='cell';d.style.background=`rgba(56,189,248,${cell.passProbability})`;d.textContent=(cell.passProbability*100).toFixed(0)+'%';heat.appendChild(d)});return}else{c1.style.display='block';c2.style.display='block';}
+if(tab==='overview'||tab==='risk'){charts.push(new Chart(c1,{type:'doughnut',data:{labels:['Pass','Fail','Timeout'],datasets:[{data:[res.pass_fail_counts.passed,res.pass_fail_counts.failed,res.pass_fail_counts.timeout],backgroundColor:['#34d399','#f87171','#94a3b8']}]} }));charts.push(new Chart(c2,{type:'bar',data:{labels:hist(res.ending_balances).map(b=>b.x),datasets:[{data:hist(res.ending_balances).map(b=>b.y),backgroundColor:'#60a5fa'}]}}));}
+if(tab==='dist'){charts.push(new Chart(c1,{type:'bar',data:{labels:hist(res.max_drawdowns_pct.map(x=>x*100)).map(b=>b.x),datasets:[{data:hist(res.max_drawdowns_pct.map(x=>x*100)).map(b=>b.y),backgroundColor:'#fbbf24'}]}}));charts.push(new Chart(c2,{type:'bar',data:{labels:hist(res.trades_to_outcome).map(b=>b.x),datasets:[{data:hist(res.trades_to_outcome).map(b=>b.y),backgroundColor:'#c084fc'}]}}));}
+if(tab==='risk'){const p=[];res.sampled_paths.slice(0,50).forEach(path=>path.forEach((eq,i)=>p.push({x:i,y:eq})));charts.push(new Chart(c3,{type:'line',data:{datasets:[{data:p,borderColor:'#67e8f9',parsing:false,pointRadius:0,borderWidth:1}]},options:{plugins:{legend:{display:false}}}}));}
+}
+run.onclick=async()=>{run.disabled=true;run.textContent='Running…';const r=await fetch(api+'/api/simulate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});draw(await r.json());run.disabled=false;run.textContent='Run Monte Carlo';};
+csv.onclick=async()=>{const r=await fetch(api+'/api/export/csv',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});const t=await r.text();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));a.download='prop-firm-simulations.csv';a.click()}
+document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll('[data-tab]').forEach(x=>x.style.background='#111b3d');b.style.background='#233975';if(window.lastRes)draw(window.lastRes)});
+const oldDraw=draw;draw=(res)=>{window.lastRes=res;oldDraw(res)};document.querySelector('[data-tab="overview"]').click();run.click();
+</script>
+</body>
+</html>
