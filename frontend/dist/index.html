@@ -45,6 +45,21 @@
     .toggle-label { display: flex; align-items: center; gap: 8px; color: var(--text); }
     .toggle-label input { width: auto; margin-top: 0; }
     .strategy { margin-top: 12px; color: var(--muted); font-size: 13px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+    .tab-btn {
+      background: #1f2f5d;
+      color: #cdd9ff;
+      border: 1px solid #2a3f78;
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tab-btn.active {
+      background: #365aa8;
+      color: #fff;
+      border-color: #5f84d3;
+    }
     button {
       background: var(--accent); color: white; border: 0; border-radius: 10px;
       padding: 10px 16px; font-weight: 600; cursor: pointer; margin-top: 14px;
@@ -78,6 +93,11 @@
     .stat small { color: var(--muted); display: block; }
     .stat strong { font-size: 30px; }
     .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+    .hidden { display: none; }
+    .heatmap-wrap { overflow-x: auto; }
+    table.heatmap { width: 100%; border-collapse: collapse; min-width: 520px; }
+    .heatmap th, .heatmap td { border: 1px solid #2a3f78; padding: 8px; text-align: center; font-size: 13px; }
+    .heatmap th { background: #0d1a39; color: var(--muted); }
     h3 { margin-top: 0; }
     @media (max-width: 920px) {
       h1 { font-size: 30px; }
@@ -91,6 +111,10 @@
   <p class="subtitle">Simple Monte Carlo runs with only the essentials.</p>
 
   <div class="panel">
+    <div class="tabs">
+      <button id="singleTab" class="tab-btn active" type="button">Single Simulation</button>
+      <button id="heatmapTab" class="tab-btn" type="button">WR/RR Heatmap Playoff</button>
+    </div>
     <div class="grid">
       <label>Initial Balance
         <input id="initial_balance" type="number" value="100000" min="1">
@@ -135,9 +159,14 @@
 
     <div class="stats" id="stats"></div>
     <p class="strategy" id="samplingMeta"></p>
+    <div id="heatmapSection" class="hidden">
+      <p class="strategy">Heatmap mode calculates pass rate playoffs across fixed mathematical WR↔RR pairs (WR = 1 / (1 + RR)). Green is higher pass rate, red is lower.</p>
+      <p class="strategy" id="heatmapSummary"></p>
+      <div class="heatmap-wrap" id="heatmapWrap"></div>
+    </div>
   </div>
 
-  <div class="charts">
+  <div class="charts" id="chartsSection">
     <div class="panel">
       <h3>Simulation Paths</h3>
       <canvas id="paths" height="140"></canvas>
@@ -155,6 +184,8 @@ let activeJobId = null;
 let pollTimer = null;
 let cancelSupported = null;
 let lastPayload = null;
+let activeMode = "single";
+const heatmapPairs = [4, 3, 2, 1, 0.5, 0.33].map((rr) => ({ rr, wr: 1 / (1 + rr) }));
 
 function setJobStatus(message, isError = false) {
   jobStatus.textContent = message;
@@ -187,6 +218,17 @@ function startJobUi(jobId, total) {
   cancel.hidden = false;
   retry.hidden = true;
   setProgress(0, total);
+}
+
+function setMode(mode) {
+  activeMode = mode;
+  const single = mode === 'single';
+  singleTab.classList.toggle('active', single);
+  heatmapTab.classList.toggle('active', !single);
+  chartsSection.classList.toggle('hidden', !single);
+  heatmapSection.classList.toggle('hidden', single);
+  win_rate.disabled = !single;
+  risk_reward.disabled = !single;
 }
 
 function getPayload() {
@@ -375,21 +417,154 @@ async function startSimulation(payload) {
   }
 }
 
+function heatmapColor(passProbability, min, max) {
+  const span = Math.max(0.0001, max - min);
+  const t = (passProbability - min) / span;
+  const hue = 0 + (120 * t);
+  const lightness = 18 + (42 * t);
+  return `hsl(${hue} 80% ${lightness}%)`;
+}
+
+function drawHeatmap(results) {
+  const passRates = results.map((row) => row.passProbability);
+  const min = Math.min(...passRates);
+  const max = Math.max(...passRates);
+  const best = results.reduce((acc, row) => row.passProbability > acc.passProbability ? row : acc, results[0]);
+  const worst = results.reduce((acc, row) => row.passProbability < acc.passProbability ? row : acc, results[0]);
+
+  heatmapSummary.textContent = `Best playoff: RR ${best.rr} / WR ${(best.wr * 100).toFixed(1)}% with ${(best.passProbability * 100).toFixed(1)}% pass rate. Worst playoff: RR ${worst.rr} / WR ${(worst.wr * 100).toFixed(1)}% with ${(worst.passProbability * 100).toFixed(1)}% pass rate.`;
+
+  const rows = results.map((row) => {
+    const bg = heatmapColor(row.passProbability, min, max);
+    return `<tr>
+      <td>${row.rr}</td>
+      <td>${(row.wr * 100).toFixed(1)}%</td>
+      <td style="background:${bg};color:#fff;font-weight:600;">${(row.passProbability * 100).toFixed(1)}%</td>
+      <td>${row.passed}/${row.total}</td>
+    </tr>`;
+  }).join('');
+
+  heatmapWrap.innerHTML = `<table class="heatmap">
+    <thead>
+      <tr>
+        <th>RR</th>
+        <th>Mathematical WR</th>
+        <th>Pass Rate</th>
+        <th>Passes / Sims</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function runHeatmapPlayoff() {
+  const basePayload = getPayload();
+  const totalSims = basePayload.simulations * heatmapPairs.length;
+  run.disabled = true;
+  run.textContent = 'Running...';
+  retry.hidden = true;
+  cancel.hidden = true;
+  setProgress(0, totalSims);
+
+  const results = [];
+  let completed = 0;
+
+  for (let i = 0; i < heatmapPairs.length; i += 1) {
+    const pair = heatmapPairs[i];
+    setJobStatus(`Running playoff ${i + 1}/${heatmapPairs.length} (RR ${pair.rr}, WR ${(pair.wr * 100).toFixed(1)}%)...`);
+    const payload = {
+      ...basePayload,
+      strategy: {
+        ...basePayload.strategy,
+        win_rate: pair.wr,
+        risk_reward: pair.rr,
+      },
+    };
+
+    const response = await fetch('/api/simulate/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) throw new Error(`Job creation failed (${response.status})`);
+
+    const data = await response.json();
+    const jobId = data.job_id;
+    let done = false;
+
+    while (!done) {
+      const pollResponse = await fetch(`/api/simulate/jobs/${jobId}`);
+      if (!pollResponse.ok) throw new Error(`Polling failed (${pollResponse.status})`);
+
+      const job = await pollResponse.json();
+      const runCompleted = Math.max(0, Math.min(job.completed_simulations || 0, basePayload.simulations));
+      setProgress(completed + runCompleted, totalSims);
+
+      if (job.status === 'failed') throw new Error(job.error || 'Simulation failed');
+
+      if (job.status === 'completed') {
+        const res = job.result;
+        results.push({
+          rr: pair.rr,
+          wr: pair.wr,
+          passProbability: res.pass_probability,
+          passed: res.passed,
+          total: res.passed + res.failed + res.timeout,
+        });
+        completed += basePayload.simulations;
+        setProgress(completed, totalSims);
+        done = true;
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  }
+
+  drawHeatmap(results);
+  run.disabled = false;
+  run.textContent = 'Run Simulations';
+  setJobStatus(`Completed heatmap playoffs: ${results.length} combinations tested.`);
+}
+
 function updateTrailingHint() {
   trailingHint.hidden = !trailing_drawdown_enabled.checked;
 }
 
 trailing_drawdown_enabled.addEventListener('change', updateTrailingHint);
+singleTab.addEventListener('click', () => setMode('single'));
+heatmapTab.addEventListener('click', () => setMode('heatmap'));
 updateTrailingHint();
+setMode('single');
 
 run.onclick = async () => {
   if (activeJobId) return;
-  await startSimulation(getPayload());
+  if (activeMode === 'single') {
+    await startSimulation(getPayload());
+    return;
+  }
+
+  try {
+    await runHeatmapPlayoff();
+  } catch (error) {
+    run.disabled = false;
+    run.textContent = 'Run Simulations';
+    retry.hidden = false;
+    setJobStatus(`Heatmap run failed: ${error.message}`, true);
+  }
 };
 
 retry.onclick = async () => {
-  const payload = lastPayload || getPayload();
-  await startSimulation(payload);
+  if (activeMode === 'single') {
+    const payload = lastPayload || getPayload();
+    await startSimulation(payload);
+    return;
+  }
+
+  try {
+    await runHeatmapPlayoff();
+  } catch (error) {
+    setJobStatus(`Heatmap run failed: ${error.message}`, true);
+  }
 };
 
 cancel.onclick = async () => {
