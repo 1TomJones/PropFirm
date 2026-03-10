@@ -54,5 +54,7 @@ This separation ensures job progress and completed results survive web service r
 
 ## Required environment variables
 
-- `REDIS_URL` (required): Redis connection string used by both web and worker services.
+- `REDIS_URL` (recommended in production): Redis connection string used by both web and worker services.
 - `PYTHON_VERSION` (Render-managed in `render.yaml`): Python runtime version.
+
+If `REDIS_URL` is not set, the web app now falls back to an in-memory job store and runs jobs in-process. This keeps the app bootable, but queued jobs and progress state are not durable across restarts and horizontal scaling.

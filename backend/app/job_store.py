@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+from threading import Lock
+
 from redis import Redis
 
 from .models import SimulationRequest, SimulationResponse
@@ -84,3 +86,56 @@ class RedisJobStore:
 
     def set_job_failed(self, job_id: str, error: str) -> None:
         self.client.hset(self._job_key(job_id), mapping={"status": "failed", "error": error})
+
+
+class InMemoryJobStore:
+    def __init__(self):
+        self._jobs: dict[str, dict[str, str]] = {}
+        self._lock = Lock()
+
+    def ping(self) -> bool:
+        return True
+
+    def enqueue_job(self, job_id: str, request: SimulationRequest) -> None:
+        with self._lock:
+            self._jobs[job_id] = {
+                "status": "queued",
+                "completed_simulations": "0",
+                "total_simulations": str(request.simulations),
+                "request": request.model_dump_json(),
+                "result": "",
+                "error": "",
+            }
+
+    def get_job(self, job_id: str) -> dict[str, str] | None:
+        with self._lock:
+            state = self._jobs.get(job_id)
+            return dict(state) if state else None
+
+    def set_job_running(self, job_id: str) -> None:
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["status"] = "running"
+
+    def update_progress(self, job_id: str, completed: int, total: int) -> None:
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id]["completed_simulations"] = str(completed)
+                self._jobs[job_id]["total_simulations"] = str(total)
+
+    def set_job_completed(self, job_id: str, result: SimulationResponse, completed: int) -> None:
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id].update(
+                    {
+                        "status": "completed",
+                        "result": result.model_dump_json(),
+                        "completed_simulations": str(completed),
+                        "error": "",
+                    }
+                )
+
+    def set_job_failed(self, job_id: str, error: str) -> None:
+        with self._lock:
+            if job_id in self._jobs:
+                self._jobs[job_id].update({"status": "failed", "error": error})
