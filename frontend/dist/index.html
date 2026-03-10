@@ -99,6 +99,7 @@
     <button id="run">Run Simulations</button>
 
     <div class="stats" id="stats"></div>
+    <p class="strategy" id="samplingMeta"></p>
   </div>
 
   <div class="charts">
@@ -123,6 +124,9 @@ function getPayload() {
     fail_loss_pct: +fail_loss_pct.value / 100,
     timeout_trades: +timeout_trades.value,
     simulations: +simulations.value,
+    store_paths: true,
+    max_paths_returned: Math.min(+simulations.value, 250),
+    path_decimation_step: 1,
     strategy: {
       win_rate: +win_rate.value / 100,
       risk_reward: +risk_reward.value,
@@ -145,6 +149,12 @@ function draw(res) {
     <div class="stat"><small>Failed</small><strong>${res.failed}</strong><small>${(res.fail_probability * 100).toFixed(1)}%</small></div>
     <div class="stat"><small>Timed Out</small><strong>${res.timeout}</strong><small>${(res.timeout_probability * 100).toFixed(1)}%</small></div>
   `;
+
+  const sampled = res.paths_returned ?? res.sampled_paths.length;
+  const totalPaths = res.paths_total ?? (res.passed + res.failed + res.timeout);
+  samplingMeta.textContent = sampled < totalPaths
+    ? `Displaying ${sampled} sampled path${sampled === 1 ? '' : 's'} out of ${totalPaths} total simulations.`
+    : `Displaying all ${totalPaths} simulation paths.`;
 
   if (pathChart) pathChart.destroy();
   if (pieChart) pieChart.destroy();
@@ -178,6 +188,9 @@ function draw(res) {
   const payload = getPayload();
   const successLevel = payload.initial_balance * (1 + payload.success_gain_pct);
   const failLevel = payload.initial_balance * (1 - payload.fail_loss_pct);
+  const flattened = res.sampled_paths.flat();
+  const minPath = flattened.length ? Math.min(...flattened) : failLevel;
+  const maxPath = flattened.length ? Math.max(...flattened) : successLevel;
 
   pathChart = new Chart(paths, {
     type: 'line',
@@ -202,8 +215,8 @@ function draw(res) {
           grid: { color: 'rgba(148,163,184,0.08)' }
         },
         y: {
-          suggestedMin: Math.min(failLevel, ...res.sampled_paths.flat()),
-          suggestedMax: Math.max(successLevel, ...res.sampled_paths.flat()),
+          suggestedMin: Math.min(failLevel, minPath),
+          suggestedMax: Math.max(successLevel, maxPath),
           title: { display: true, text: 'Balance', color: '#9aabd4' },
           ticks: { color: '#c5d2f2' },
           grid: { color: 'rgba(148,163,184,0.08)' }
