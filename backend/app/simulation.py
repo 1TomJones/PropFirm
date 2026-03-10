@@ -18,12 +18,14 @@ def _simulate_path(
 ) -> tuple[str, list[float] | None]:
     balance = request.initial_balance
     success_level = request.initial_balance * (1 + request.success_gain_pct)
-    fail_level = request.initial_balance * (1 - request.fail_loss_pct)
+    initial_fail_level = request.initial_balance * (1 - request.fail_loss_pct)
+    fail_level = initial_fail_level
     path: list[float] | None = [balance] if collect_path else None
 
     loss_unit = request.initial_balance * request.strategy.risk_per_trade_pct
     win_unit = loss_unit * request.strategy.risk_reward
 
+    peak_balance = balance
     outcome = "timeout"
 
     for tick in range(1, request.timeout_trades + 1):
@@ -36,6 +38,13 @@ def _simulate_path(
             tick % request.path_decimation_step == 0 or tick == request.timeout_trades
         ):
             path.append(balance)
+
+        if request.trailing_drawdown_enabled and balance > peak_balance:
+            peak_balance = balance
+            fail_level = min(
+                request.initial_balance,
+                initial_fail_level + max(0.0, peak_balance - request.initial_balance),
+            )
 
         if balance >= success_level:
             outcome = "passed"

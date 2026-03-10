@@ -5,6 +5,7 @@ A simplified FastAPI + Chart.js app that runs Monte Carlo simulations with only 
 - Initial balance
 - Success target (% gain)
 - Fail threshold (% loss)
+- Optional trailing drawdown toggle (moves fail level up with new equity highs, capped at starting balance)
 - Timeout duration (number of trades)
 - Number of simulations
 - Strategy assumptions (win rate, risk:reward, and risk per trade % of initial balance)

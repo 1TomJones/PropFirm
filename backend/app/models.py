@@ -13,6 +13,7 @@ class SimulationRequest(BaseModel):
     initial_balance: float = Field(100000, gt=0)
     success_gain_pct: float = Field(0.1, gt=0)
     fail_loss_pct: float = Field(0.06, gt=0)
+    trailing_drawdown_enabled: bool = False
     timeout_trades: int = Field(100, ge=1, le=100000)
     simulations: int = Field(200, ge=1, le=10000)
     store_paths: bool = True
