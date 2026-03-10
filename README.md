@@ -7,7 +7,7 @@ A simplified FastAPI + Chart.js app that runs Monte Carlo simulations with only 
 - Fail threshold (% loss)
 - Timeout duration (number of trades)
 - Number of simulations
-- Strategy assumptions (win rate and risk:reward)
+- Strategy assumptions (win rate, risk:reward, and risk per trade % of initial balance)
 
 ## What it shows
 
