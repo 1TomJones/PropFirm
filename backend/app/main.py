@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Lock, Thread
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -9,15 +8,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .job_store import RedisJobStore
 from .models import (
     SimulationJobCreateResponse,
     SimulationJobStatusResponse,
-    SimulationRequest,
     SimulationResponse,
+    SimulationRequest,
 )
-from .simulation import run_simulation
 
 app = FastAPI(title="Prop Firm Challenge Dashboard API", version="1.0.0")
+store = RedisJobStore.from_env()
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,86 +28,41 @@ app.add_middleware(
 )
 
 
-class JobState(dict):
-    pass
-
-
-job_store: dict[str, JobState] = {}
-job_store_lock = Lock()
-
-
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _run_simulation_job(job_id: str, request: SimulationRequest) -> None:
-    with job_store_lock:
-        state = job_store.get(job_id)
-        if state is None:
-            return
-        state["status"] = "running"
-
-    def update_progress(completed: int, total: int) -> None:
-        with job_store_lock:
-            current = job_store.get(job_id)
-            if current is None:
-                return
-            current["completed_simulations"] = completed
-            current["total_simulations"] = total
-
-    try:
-        result = run_simulation(request, chunk_size=100, on_progress=update_progress)
-        with job_store_lock:
-            state = job_store.get(job_id)
-            if state is None:
-                return
-            state["status"] = "completed"
-            state["result"] = result
-            state["completed_simulations"] = request.simulations
-    except Exception as exc:  # pragma: no cover - defensive server-side guard
-        with job_store_lock:
-            state = job_store.get(job_id)
-            if state is None:
-                return
-            state["status"] = "failed"
-            state["error"] = str(exc)
+@app.get("/api/status")
+def api_status() -> dict[str, str]:
+    return {"status": "ok", "store": "ok" if store.ping() else "unreachable"}
 
 
 @app.post("/api/simulate/jobs", response_model=SimulationJobCreateResponse)
 def create_simulation_job(request: SimulationRequest) -> SimulationJobCreateResponse:
     job_id = str(uuid4())
-    with job_store_lock:
-        job_store[job_id] = JobState(
-            status="queued",
-            completed_simulations=0,
-            total_simulations=request.simulations,
-            result=None,
-            error=None,
-        )
-
-    worker = Thread(target=_run_simulation_job, args=(job_id, request), daemon=True)
-    worker.start()
-
+    store.enqueue_job(job_id, request)
     return SimulationJobCreateResponse(job_id=job_id)
 
 
 @app.get("/api/simulate/jobs/{job_id}", response_model=SimulationJobStatusResponse)
 def get_simulation_job(job_id: str) -> SimulationJobStatusResponse:
-    with job_store_lock:
-        state = job_store.get(job_id)
-        if state is None:
-            raise HTTPException(status_code=404, detail="Job not found")
+    state = store.get_job(job_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-        result: SimulationResponse | None = state.get("result") if state.get("status") == "completed" else None
-        return SimulationJobStatusResponse(
-            job_id=job_id,
-            status=state["status"],
-            completed_simulations=state["completed_simulations"],
-            total_simulations=state["total_simulations"],
-            result=result,
-            error=state.get("error"),
-        )
+    raw_result = state.get("result")
+    result = SimulationResponse.model_validate_json(raw_result) if raw_result else None
+    error = state.get("error") or None
+
+    return SimulationJobStatusResponse(
+        job_id=job_id,
+        status=state.get("status", "unknown"),
+        completed_simulations=int(state.get("completed_simulations", "0")),
+        total_simulations=int(state.get("total_simulations", "0")),
+        result=result,
+        error=error,
+    )
 
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
