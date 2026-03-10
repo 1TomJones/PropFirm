@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: propfirm-dashboard
+    name: propfirm-dashboard-web
     runtime: python
     plan: free
     buildCommand: pip install -r backend/requirements.txt
@@ -8,3 +8,28 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: propfirm-dashboard-redis
+          property: connectionString
+
+  - type: worker
+    name: propfirm-dashboard-worker
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python -m backend.app.worker
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: propfirm-dashboard-redis
+          property: connectionString
+
+  - type: redis
+    name: propfirm-dashboard-redis
+    plan: free
+    ipAllowList: []
