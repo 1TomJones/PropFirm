@@ -42,6 +42,8 @@
       width: 100%; margin-top: 6px; background: #08112b; color: var(--text);
       border: 1px solid #2a3f78; border-radius: 10px; padding: 9px;
     }
+    .toggle-label { display: flex; align-items: center; gap: 8px; color: var(--text); }
+    .toggle-label input { width: auto; margin-top: 0; }
     .strategy { margin-top: 12px; color: var(--muted); font-size: 13px; }
     button {
       background: var(--accent); color: white; border: 0; border-radius: 10px;
@@ -99,6 +101,9 @@
       <label>Fail Limit (% loss)
         <input id="fail_loss_pct" type="number" value="6" step="0.1" min="0.1">
       </label>
+      <label>Trailing Drawdown
+        <span class="toggle-label"><input id="trailing_drawdown_enabled" type="checkbox"> Enable trailing fail limit</span>
+      </label>
       <label>Timeout (trades)
         <input id="timeout_trades" type="number" value="100" min="1">
       </label>
@@ -117,6 +122,7 @@
     </div>
 
     <p class="strategy">Default strategy assumptions are 50% win rate, 1:1 risk:reward, and 1% risk per trade based on initial balance. Change them if needed.</p>
+    <p class="strategy" id="trailingHint" hidden>Trailing drawdown is enabled. Keep all required thresholds as percentages (Success Target %, Fail Limit %, Risk Per Trade %).</p>
     <div class="actions">
       <button id="run">Run Simulations</button>
       <button id="cancel" class="danger" hidden>Cancel</button>
@@ -188,6 +194,7 @@ function getPayload() {
     initial_balance: +initial_balance.value,
     success_gain_pct: +success_gain_pct.value / 100,
     fail_loss_pct: +fail_loss_pct.value / 100,
+    trailing_drawdown_enabled: trailing_drawdown_enabled.checked,
     timeout_trades: +timeout_trades.value,
     simulations: +simulations.value,
     store_paths: true,
@@ -367,6 +374,13 @@ async function startSimulation(payload) {
     setJobStatus(`Network error while starting simulation: ${error.message}. You can retry.`, true);
   }
 }
+
+function updateTrailingHint() {
+  trailingHint.hidden = !trailing_drawdown_enabled.checked;
+}
+
+trailing_drawdown_enabled.addEventListener('change', updateTrailingHint);
+updateTrailingHint();
 
 run.onclick = async () => {
   if (activeJobId) return;
