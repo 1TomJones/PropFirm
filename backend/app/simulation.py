@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 
 from .models import SimulationRequest, SimulationResponse
+
+
+ProgressCallback = Callable[[int, int], None]
 
 
 def _simulate_path(rng: np.random.Generator, request: SimulationRequest) -> tuple[str, list[float]]:
@@ -36,21 +41,31 @@ def _simulate_path(rng: np.random.Generator, request: SimulationRequest) -> tupl
     return outcome, path
 
 
-def run_simulation(request: SimulationRequest) -> SimulationResponse:
+def run_simulation(
+    request: SimulationRequest,
+    *,
+    chunk_size: int = 100,
+    on_progress: ProgressCallback | None = None,
+) -> SimulationResponse:
     rng = np.random.default_rng()
 
     outcomes: list[str] = []
     paths: list[list[float]] = []
 
-    for _ in range(request.simulations):
-        outcome, path = _simulate_path(rng, request)
-        outcomes.append(outcome)
-        paths.append(path)
+    total = request.simulations
+    for chunk_start in range(0, total, max(1, chunk_size)):
+        chunk_end = min(chunk_start + max(1, chunk_size), total)
+        for _ in range(chunk_start, chunk_end):
+            outcome, path = _simulate_path(rng, request)
+            outcomes.append(outcome)
+            paths.append(path)
+
+        if on_progress is not None:
+            on_progress(chunk_end, total)
 
     passed = outcomes.count("passed")
     failed = outcomes.count("failed")
     timeout = outcomes.count("timeout")
-    total = request.simulations
 
     return SimulationResponse(
         passed=passed,

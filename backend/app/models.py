@@ -27,3 +27,16 @@ class SimulationResponse(BaseModel):
     timeout_probability: float
     sampled_paths: list[list[float]]
     path_outcomes: list[str]
+
+
+class SimulationJobCreateResponse(BaseModel):
+    job_id: str
+
+
+class SimulationJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    completed_simulations: int
+    total_simulations: int
+    result: SimulationResponse | None = None
+    error: str | None = None
