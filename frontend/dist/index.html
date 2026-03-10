@@ -3,50 +3,108 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Simple Monte Carlo Simulator</title>
+  <title>Prop Challenge Simulator</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Inter, Arial, sans-serif; margin: 0; background: #0b1220; color: #e5e7eb; }
-    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-    h1 { margin: 0 0 16px; }
-    .panel { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap: 12px; }
-    label { display: block; font-size: 12px; color: #9ca3af; }
-    input { width: 100%; margin-top: 6px; background: #0f172a; color: #e5e7eb; border: 1px solid #334155; border-radius: 8px; padding: 8px; }
-    button { background: #2563eb; color: white; border: 0; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; margin-top: 12px; }
-    .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 12px; }
-    .stat { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 10px; text-align: center; }
+    :root {
+      color-scheme: dark;
+      --bg: #071028;
+      --panel: #0d1a39;
+      --line: #21325f;
+      --text: #e6ecff;
+      --muted: #9aabd4;
+      --accent: #4b7dff;
+      --green: #2dd4bf;
+      --red: #f87171;
+      --slate: #94a3b8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: Inter, system-ui, Arial, sans-serif;
+      margin: 0;
+      background: radial-gradient(circle at top, #10224d 0%, var(--bg) 45%);
+      color: var(--text);
+    }
+    .wrap { max-width: 1200px; margin: 28px auto; padding: 0 16px; }
+    h1 { margin: 0 0 8px; font-size: 40px; }
+    .subtitle { color: var(--muted); margin: 0 0 20px; }
+    .panel {
+      background: linear-gradient(180deg, rgba(15,29,63,.9), rgba(8,17,38,.95));
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 10px 26px rgba(0,0,0,0.28);
+    }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    label { display: block; font-size: 12px; color: var(--muted); }
+    input {
+      width: 100%; margin-top: 6px; background: #08112b; color: var(--text);
+      border: 1px solid #2a3f78; border-radius: 10px; padding: 9px;
+    }
+    .strategy { margin-top: 12px; color: var(--muted); font-size: 13px; }
+    button {
+      background: var(--accent); color: white; border: 0; border-radius: 10px;
+      padding: 10px 16px; font-weight: 600; cursor: pointer; margin-top: 14px;
+    }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .stat {
+      background: #091433; border: 1px solid #2a3f78; border-radius: 10px;
+      padding: 12px; text-align: center;
+    }
+    .stat small { color: var(--muted); display: block; }
+    .stat strong { font-size: 30px; }
     .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
-    @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr; } }
+    h3 { margin-top: 0; }
+    @media (max-width: 920px) {
+      h1 { font-size: 30px; }
+      .charts, .stats { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Simple Monte Carlo Simulator</h1>
+  <h1>Prop Challenge Simulator</h1>
+  <p class="subtitle">Simple Monte Carlo runs with only the essentials.</p>
 
   <div class="panel">
     <div class="grid">
-      <label>Initial Balance<input id="initial_balance" type="number" value="100000"></label>
-      <label>Success Gain %<input id="success_gain_pct" type="number" value="10" step="0.1"></label>
-      <label>Fail Loss %<input id="fail_loss_pct" type="number" value="6" step="0.1"></label>
-      <label>Timeout (Trades)<input id="timeout_trades" type="number" value="100"></label>
-      <label>Number of Simulations<input id="simulations" type="number" value="100"></label>
-      <label>Win Rate %<input id="win_rate" type="number" value="50" step="0.1"></label>
-      <label>Risk Reward<input id="risk_reward" type="number" value="1" step="0.1"></label>
-      <label>Random Seed (optional)<input id="seed" type="number" value=""></label>
+      <label>Initial Balance
+        <input id="initial_balance" type="number" value="100000" min="1">
+      </label>
+      <label>Success Target (% gain)
+        <input id="success_gain_pct" type="number" value="10" step="0.1" min="0.1">
+      </label>
+      <label>Fail Limit (% loss)
+        <input id="fail_loss_pct" type="number" value="6" step="0.1" min="0.1">
+      </label>
+      <label>Timeout (trades)
+        <input id="timeout_trades" type="number" value="100" min="1">
+      </label>
+      <label>Number of Sims
+        <input id="simulations" type="number" value="100" min="1" max="5000">
+      </label>
+      <label>Win Rate %
+        <input id="win_rate" type="number" value="50" step="0.1" min="0" max="100">
+      </label>
+      <label>Risk:Reward
+        <input id="risk_reward" type="number" value="1" step="0.1" min="0.1">
+      </label>
     </div>
-    <button id="run">Run Simulation</button>
+
+    <p class="strategy">Default strategy assumptions are 50% win rate and 1:1 risk:reward. Change them if needed.</p>
+    <button id="run">Run Simulations</button>
 
     <div class="stats" id="stats"></div>
   </div>
 
   <div class="charts">
     <div class="panel">
-      <h3>Simulation Equity Paths</h3>
+      <h3>Trade-by-Trade Equity Paths</h3>
       <canvas id="paths" height="140"></canvas>
     </div>
     <div class="panel">
-      <h3>Outcomes</h3>
+      <h3>Outcome Breakdown</h3>
       <canvas id="pie" height="140"></canvas>
     </div>
   </div>
@@ -66,39 +124,90 @@ function getPayload() {
       win_rate: +win_rate.value / 100,
       risk_reward: +risk_reward.value,
     },
-    seed: seed.value === '' ? null : +seed.value,
   };
 }
 
+function shadedColor(outcome, index, total) {
+  const t = total <= 1 ? 0.5 : index / (total - 1);
+  if (outcome === 'passed') return `hsl(165 70% ${46 + t * 20}%)`;
+  if (outcome === 'failed') return `hsl(358 80% ${52 + t * 20}%)`;
+  return `hsl(220 16% ${55 + t * 24}%)`;
+}
+
 function draw(res) {
+  const total = Math.max(1, res.passed + res.failed + res.timeout);
   stats.innerHTML = `
-    <div class="stat"><div>Passed</div><strong>${res.passed}</strong></div>
-    <div class="stat"><div>Failed</div><strong>${res.failed}</strong></div>
-    <div class="stat"><div>Timed Out</div><strong>${res.timeout}</strong></div>
+    <div class="stat"><small>Passed</small><strong>${res.passed}</strong><small>${(res.pass_probability * 100).toFixed(1)}%</small></div>
+    <div class="stat"><small>Failed</small><strong>${res.failed}</strong><small>${(res.fail_probability * 100).toFixed(1)}%</small></div>
+    <div class="stat"><small>Timed Out</small><strong>${res.timeout}</strong><small>${(res.timeout_probability * 100).toFixed(1)}%</small></div>
   `;
 
   if (pathChart) pathChart.destroy();
   if (pieChart) pieChart.destroy();
 
-  const datasets = res.sampled_paths.map((path, i) => ({
-    data: path.map((y, x) => ({ x, y })),
-    borderColor: res.path_outcomes[i] === 'passed' ? '#10b981' : (res.path_outcomes[i] === 'failed' ? '#ef4444' : '#94a3b8'),
-    borderWidth: 1,
-    pointRadius: 0,
-    fill: false,
-  }));
+  const outcomeIndexes = { passed: 0, failed: 0, timeout: 0 };
+  const outcomeTotals = {
+    passed: res.path_outcomes.filter(o => o === 'passed').length,
+    failed: res.path_outcomes.filter(o => o === 'failed').length,
+    timeout: res.path_outcomes.filter(o => o === 'timeout').length,
+  };
+
+  const datasets = res.sampled_paths.map((path, i) => {
+    const outcome = res.path_outcomes[i];
+    const idx = outcomeIndexes[outcome]++;
+    return {
+      data: path.map((y, x) => ({ x, y })),
+      borderColor: shadedColor(outcome, idx, outcomeTotals[outcome]),
+      borderWidth: 1.35,
+      pointRadius: 0,
+      fill: false,
+      tension: 0,
+    };
+  });
+
+  const payload = getPayload();
+  const successLevel = payload.initial_balance * (1 + payload.success_gain_pct);
+  const failLevel = payload.initial_balance * (1 - payload.fail_loss_pct);
 
   pathChart = new Chart(paths, {
     type: 'line',
     data: { datasets },
-    options: { plugins: { legend: { display: false } }, parsing: false }
+    options: {
+      parsing: false,
+      animation: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Trade Number', color: '#9aabd4' }, grid: { color: 'rgba(148,163,184,0.08)' } },
+        y: {
+          min: failLevel,
+          max: successLevel,
+          title: { display: true, text: 'Balance', color: '#9aabd4' },
+          grid: { color: 'rgba(148,163,184,0.08)' }
+        }
+      }
+    }
   });
 
   pieChart = new Chart(pie, {
     type: 'pie',
     data: {
       labels: ['Passed', 'Failed', 'Timed Out'],
-      datasets: [{ data: [res.passed, res.failed, res.timeout], backgroundColor: ['#10b981', '#ef4444', '#94a3b8'] }]
+      datasets: [{
+        data: [res.passed, res.failed, res.timeout],
+        backgroundColor: ['#2dd4bf', '#f87171', '#94a3b8'],
+        borderColor: '#08112b',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      plugins: {
+        legend: { labels: { color: '#e6ecff' } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.label}: ${ctx.raw} (${(ctx.raw / total * 100).toFixed(1)}%)`
+          }
+        }
+      }
     }
   });
 }
@@ -106,15 +215,18 @@ function draw(res) {
 run.onclick = async () => {
   run.disabled = true;
   run.textContent = 'Running...';
+
   const response = await fetch('/api/simulate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(getPayload())
   });
+
   const data = await response.json();
   draw(data);
+
   run.disabled = false;
-  run.textContent = 'Run Simulation';
+  run.textContent = 'Run Simulations';
 };
 
 run.click();

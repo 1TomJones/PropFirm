@@ -4,11 +4,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .models import SimulationRequest, SimulationResponse
-from .simulation import response_to_csv_rows, run_simulation
+from .simulation import run_simulation
 
 app = FastAPI(title="Prop Firm Challenge Dashboard API", version="1.0.0")
 
@@ -29,12 +29,6 @@ def health() -> dict[str, str]:
 @app.post("/api/simulate", response_model=SimulationResponse)
 def simulate(request: SimulationRequest) -> SimulationResponse:
     return run_simulation(request)
-
-
-@app.post("/api/export/csv", response_class=PlainTextResponse)
-def export_csv(request: SimulationRequest) -> str:
-    response = run_simulation(request)
-    return "\n".join(response_to_csv_rows(response))
 
 
 frontend_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
