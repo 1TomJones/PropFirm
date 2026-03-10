@@ -103,7 +103,7 @@
 
   <div class="charts">
     <div class="panel">
-      <h3>Trade-by-Trade Equity Paths</h3>
+      <h3>Simulation Paths</h3>
       <canvas id="paths" height="140"></canvas>
     </div>
     <div class="panel">
@@ -156,14 +156,20 @@ function draw(res) {
     timeout: res.path_outcomes.filter(o => o === 'timeout').length,
   };
 
+  const pointRadius = res.sampled_paths.length <= 25 ? 1.8 : res.sampled_paths.length <= 100 ? 1.2 : 0.8;
+
   const datasets = res.sampled_paths.map((path, i) => {
     const outcome = res.path_outcomes[i];
     const idx = outcomeIndexes[outcome]++;
     return {
+      label: `Simulation ${i + 1} (${outcome})`,
       data: path.map((y, x) => ({ x, y })),
       borderColor: shadedColor(outcome, idx, outcomeTotals[outcome]),
-      borderWidth: 1.35,
-      pointRadius: 0,
+      backgroundColor: shadedColor(outcome, idx, outcomeTotals[outcome]),
+      borderWidth: 1.15,
+      pointRadius,
+      pointHoverRadius: 4,
+      pointHitRadius: 8,
       fill: false,
       tension: 0,
     };
@@ -179,13 +185,27 @@ function draw(res) {
     options: {
       parsing: false,
       animation: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => `Tick ${items[0].parsed.x}`,
+            label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+          }
+        }
+      },
       scales: {
-        x: { title: { display: true, text: 'Trade Number', color: '#9aabd4' }, grid: { color: 'rgba(148,163,184,0.08)' } },
+        x: {
+          type: 'linear',
+          title: { display: true, text: 'Tick', color: '#9aabd4' },
+          ticks: { color: '#c5d2f2', precision: 0 },
+          grid: { color: 'rgba(148,163,184,0.08)' }
+        },
         y: {
-          min: failLevel,
-          max: successLevel,
+          suggestedMin: Math.min(failLevel, ...res.sampled_paths.flat()),
+          suggestedMax: Math.max(successLevel, ...res.sampled_paths.flat()),
           title: { display: true, text: 'Balance', color: '#9aabd4' },
+          ticks: { color: '#c5d2f2' },
           grid: { color: 'rgba(148,163,184,0.08)' }
         }
       }
