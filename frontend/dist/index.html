@@ -47,6 +47,27 @@
       background: var(--accent); color: white; border: 0; border-radius: 10px;
       padding: 10px 16px; font-weight: 600; cursor: pointer; margin-top: 14px;
     }
+    button[disabled] { opacity: 0.7; cursor: not-allowed; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .secondary { background: #334155; }
+    .danger { background: #b91c1c; }
+    .status-wrap { margin-top: 12px; }
+    .progress-track {
+      width: 100%;
+      height: 12px;
+      border-radius: 999px;
+      border: 1px solid #2a3f78;
+      background: #08112b;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      width: 0%;
+      transition: width .2s ease;
+      background: linear-gradient(90deg, #4b7dff, #2dd4bf);
+    }
+    .status-text { color: var(--muted); font-size: 13px; margin: 8px 0 0; min-height: 18px; }
+    .status-text.error { color: #fecaca; }
     .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
     .stat {
       background: #091433; border: 1px solid #2a3f78; border-radius: 10px;
@@ -96,7 +117,15 @@
     </div>
 
     <p class="strategy">Default strategy assumptions are 50% win rate, 1:1 risk:reward, and 1% risk per trade based on initial balance. Change them if needed.</p>
-    <button id="run">Run Simulations</button>
+    <div class="actions">
+      <button id="run">Run Simulations</button>
+      <button id="cancel" class="danger" hidden>Cancel</button>
+      <button id="retry" class="secondary" hidden>Retry</button>
+    </div>
+    <div class="status-wrap">
+      <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+      <p id="jobStatus" class="status-text"></p>
+    </div>
 
     <div class="stats" id="stats"></div>
     <p class="strategy" id="samplingMeta"></p>
@@ -116,6 +145,43 @@
 
 <script>
 let pathChart, pieChart;
+let activeJobId = null;
+let pollTimer = null;
+let cancelSupported = null;
+let lastPayload = null;
+
+function setJobStatus(message, isError = false) {
+  jobStatus.textContent = message;
+  jobStatus.classList.toggle('error', isError);
+}
+
+function setProgress(completed, total) {
+  const safeTotal = Math.max(0, Number(total) || 0);
+  const safeCompleted = Math.max(0, Math.min(Number(completed) || 0, safeTotal || Number(completed) || 0));
+  const pct = safeTotal > 0 ? (safeCompleted / safeTotal) * 100 : 0;
+  progressFill.style.width = `${pct.toFixed(1)}%`;
+  setJobStatus(`Progress: ${safeCompleted} / ${safeTotal} (${pct.toFixed(1)}%)`);
+}
+
+function resetActiveJobUi() {
+  activeJobId = null;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  run.disabled = false;
+  run.textContent = 'Run Simulations';
+  cancel.hidden = true;
+}
+
+function startJobUi(jobId, total) {
+  activeJobId = jobId;
+  run.disabled = true;
+  run.textContent = 'Running...';
+  cancel.hidden = false;
+  retry.hidden = true;
+  setProgress(0, total);
+}
 
 function getPayload() {
   return {
@@ -249,21 +315,96 @@ function draw(res) {
   });
 }
 
+async function pollJobStatus(jobId) {
+  try {
+    const response = await fetch(`/api/simulate/jobs/${jobId}`);
+    if (!response.ok) {
+      throw new Error(`Polling failed (${response.status})`);
+    }
+    const data = await response.json();
+    setProgress(data.completed_simulations, data.total_simulations);
+
+    if (data.status === 'completed') {
+      resetActiveJobUi();
+      retry.hidden = true;
+      setJobStatus(`Completed: ${data.completed_simulations} / ${data.total_simulations} (100.0%)`);
+      if (data.result) draw(data.result);
+      return;
+    }
+
+    if (data.status === 'failed') {
+      resetActiveJobUi();
+      retry.hidden = false;
+      setJobStatus(`Simulation failed: ${data.error || 'Unknown error'}`, true);
+      return;
+    }
+
+    pollTimer = setTimeout(() => pollJobStatus(jobId), 800);
+  } catch (error) {
+    resetActiveJobUi();
+    retry.hidden = false;
+    setJobStatus(`Network error while polling: ${error.message}. You can retry.`, true);
+  }
+}
+
+async function startSimulation(payload) {
+  lastPayload = payload;
+  try {
+    const response = await fetch('/api/simulate/jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+      throw new Error(`Job creation failed (${response.status})`);
+    }
+    const data = await response.json();
+    startJobUi(data.job_id, payload.simulations);
+    pollJobStatus(data.job_id);
+  } catch (error) {
+    resetActiveJobUi();
+    retry.hidden = false;
+    setJobStatus(`Network error while starting simulation: ${error.message}. You can retry.`, true);
+  }
+}
+
 run.onclick = async () => {
-  run.disabled = true;
-  run.textContent = 'Running...';
+  if (activeJobId) return;
+  await startSimulation(getPayload());
+};
 
-  const response = await fetch('/api/simulate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(getPayload())
-  });
+retry.onclick = async () => {
+  const payload = lastPayload || getPayload();
+  await startSimulation(payload);
+};
 
-  const data = await response.json();
-  draw(data);
+cancel.onclick = async () => {
+  if (!activeJobId) return;
+  const jobId = activeJobId;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 
-  run.disabled = false;
-  run.textContent = 'Run Simulations';
+  if (cancelSupported !== false) {
+    try {
+      const response = await fetch(`/api/simulate/jobs/${jobId}`, { method: 'DELETE' });
+      if (response.ok) {
+        cancelSupported = true;
+        resetActiveJobUi();
+        setJobStatus('Canceled active simulation job.');
+        return;
+      }
+      if (response.status === 404 || response.status === 405) {
+        cancelSupported = false;
+      }
+    } catch (_error) {
+      cancelSupported = false;
+    }
+  }
+
+  resetActiveJobUi();
+  setJobStatus('Reset active job tracking locally (server-side cancel not supported).');
 };
 
 run.click();
