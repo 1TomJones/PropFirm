@@ -15,7 +15,6 @@ class SimulationRequest(BaseModel):
     timeout_trades: int = Field(100, ge=1, le=100000)
     simulations: int = Field(200, ge=1, le=10000)
     strategy: StrategyInputs = Field(default_factory=StrategyInputs)
-    seed: int | None = None
 
 
 class SimulationResponse(BaseModel):

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Iterable
-
 import numpy as np
 
 from .models import SimulationRequest, SimulationResponse
@@ -33,7 +31,7 @@ def _simulate_path(rng: np.random.Generator, request: SimulationRequest) -> tupl
 
 
 def run_simulation(request: SimulationRequest) -> SimulationResponse:
-    rng = np.random.default_rng(request.seed)
+    rng = np.random.default_rng()
 
     outcomes: list[str] = []
     paths: list[list[float]] = []
@@ -59,9 +57,3 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
         path_outcomes=outcomes,
     )
 
-
-def response_to_csv_rows(response: SimulationResponse) -> Iterable[str]:
-    yield "simulation,outcome,path"
-    for idx, outcome in enumerate(response.path_outcomes):
-        path_str = "|".join(f"{value:.2f}" for value in response.sampled_paths[idx])
-        yield f"{idx + 1},{outcome},{path_str}"

@@ -30,4 +30,3 @@ Open `http://localhost:8000`.
 
 - `GET /api/health`
 - `POST /api/simulate`
-- `POST /api/export/csv`
