@@ -15,6 +15,9 @@ class SimulationRequest(BaseModel):
     fail_loss_pct: float = Field(0.06, gt=0)
     timeout_trades: int = Field(100, ge=1, le=100000)
     simulations: int = Field(200, ge=1, le=10000)
+    store_paths: bool = True
+    max_paths_returned: int = Field(200, ge=0, le=5000)
+    path_decimation_step: int = Field(1, ge=1, le=1000)
     strategy: StrategyInputs = Field(default_factory=StrategyInputs)
 
 
@@ -27,6 +30,8 @@ class SimulationResponse(BaseModel):
     timeout_probability: float
     sampled_paths: list[list[float]]
     path_outcomes: list[str]
+    paths_returned: int
+    paths_total: int
 
 
 class SimulationJobCreateResponse(BaseModel):
