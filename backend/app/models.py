@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class StrategyInputs(BaseModel):
     win_rate: float = Field(0.5, ge=0, le=1)
     risk_reward: float = Field(1.0, gt=0)
+    risk_per_trade_pct: float = Field(0.01, gt=0, le=1)
 
 
 class SimulationRequest(BaseModel):

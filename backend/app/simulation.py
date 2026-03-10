@@ -11,10 +11,16 @@ def _simulate_path(rng: np.random.Generator, request: SimulationRequest) -> tupl
     fail_level = request.initial_balance * (1 - request.fail_loss_pct)
     path = [balance]
 
-    loss_unit = request.initial_balance * 0.01
+    loss_unit = request.initial_balance * request.strategy.risk_per_trade_pct
     win_unit = loss_unit * request.strategy.risk_reward
 
+    outcome = "timeout"
+
     for _ in range(request.timeout_trades):
+        if outcome != "timeout":
+            path.append(balance)
+            continue
+
         if rng.random() < request.strategy.win_rate:
             balance += win_unit
         else:
@@ -23,11 +29,11 @@ def _simulate_path(rng: np.random.Generator, request: SimulationRequest) -> tupl
         path.append(balance)
 
         if balance >= success_level:
-            return "passed", path
-        if balance <= fail_level:
-            return "failed", path
+            outcome = "passed"
+        elif balance <= fail_level:
+            outcome = "failed"
 
-    return "timeout", path
+    return outcome, path
 
 
 def run_simulation(request: SimulationRequest) -> SimulationResponse:
@@ -56,4 +62,3 @@ def run_simulation(request: SimulationRequest) -> SimulationResponse:
         sampled_paths=paths,
         path_outcomes=outcomes,
     )
-
