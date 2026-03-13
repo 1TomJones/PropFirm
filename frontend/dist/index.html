@@ -114,6 +114,7 @@
     <div class="tabs">
       <button id="singleTab" class="tab-btn active" type="button">Single Simulation</button>
       <button id="heatmapTab" class="tab-btn" type="button">WR/RR Heatmap Playoff</button>
+      <button id="smartTab" class="tab-btn" type="button">Smart Mode</button>
     </div>
     <div class="grid">
       <label>Initial Balance
@@ -145,7 +146,32 @@
       </label>
     </div>
 
+    <div id="smartInputs" class="grid hidden" style="margin-top:12px;">
+      <label>Consistency Rule (% of target)
+        <input id="consistency_pct" type="number" value="50" step="1" min="1" max="100">
+      </label>
+      <label>Max Trades / Day
+        <input id="max_trades_per_day" type="number" value="5" step="1" min="1" max="200">
+      </label>
+      <label>Max Days
+        <input id="max_days" type="number" value="30" step="1" min="1" max="365">
+      </label>
+      <label>RR Min
+        <input id="rr_min" type="number" value="0.5" step="0.1" min="0.1">
+      </label>
+      <label>RR Max
+        <input id="rr_max" type="number" value="4" step="0.1" min="0.1">
+      </label>
+      <label>RR Step
+        <input id="rr_step" type="number" value="0.5" step="0.1" min="0.1">
+      </label>
+      <label>Max Risk Per Trade (% initial)
+        <input id="max_risk_per_trade_pct" type="number" value="2" step="0.1" min="0.1" max="100">
+      </label>
+    </div>
+
     <p class="strategy">Default strategy assumptions are 50% win rate, 1:1 risk:reward, and 1% risk per trade based on initial balance. Change them if needed.</p>
+    <p class="strategy" id="smartHint" hidden>Smart mode dynamically selects RR, mathematical WR (WR = 1/(1+RR)), risk, and trades/day while enforcing trailing drawdown updates only at end-of-day plus a daily consistency cap.</p>
     <p class="strategy" id="trailingHint" hidden>Trailing drawdown is enabled. Keep all required thresholds as percentages (Success Target %, Fail Limit %, Risk Per Trade %).</p>
     <div class="actions">
       <button id="run">Run Simulations</button>
@@ -158,6 +184,11 @@
     </div>
 
     <div class="stats" id="stats"></div>
+    <div id="pathViewWrap" class="hidden" style="margin-top:8px;">
+      <label style="display:flex;gap:8px;align-items:center;color:#cdd9ff;">
+        <input type="checkbox" id="showEodOnly"> Show end-of-day (EOD) paths only
+      </label>
+    </div>
     <p class="strategy" id="samplingMeta"></p>
     <div id="heatmapSection" class="hidden">
       <p class="strategy">Heatmap mode calculates pass rate playoffs across fixed mathematical WR↔RR pairs (WR = 1 / (1 + RR)). Green is higher pass rate, red is lower.</p>
@@ -185,6 +216,7 @@ let pollTimer = null;
 let cancelSupported = null;
 let lastPayload = null;
 let activeMode = "single";
+let lastResult = null;
 const heatmapPairs = [4, 3, 2, 1, 0.5, 0.33].map((rr) => ({ rr, wr: 1 / (1 + rr) }));
 
 function setJobStatus(message, isError = false) {
@@ -223,10 +255,19 @@ function startJobUi(jobId, total) {
 function setMode(mode) {
   activeMode = mode;
   const single = mode === 'single';
+  const heatmap = mode === 'heatmap';
+  const smart = mode === 'smart';
+
   singleTab.classList.toggle('active', single);
-  heatmapTab.classList.toggle('active', !single);
-  chartsSection.classList.toggle('hidden', !single);
-  heatmapSection.classList.toggle('hidden', single);
+  heatmapTab.classList.toggle('active', heatmap);
+  smartTab.classList.toggle('active', smart);
+
+  chartsSection.classList.toggle('hidden', heatmap);
+  heatmapSection.classList.toggle('hidden', !heatmap);
+  smartInputs.classList.toggle('hidden', !smart);
+  smartHint.hidden = !smart;
+  pathViewWrap.classList.toggle('hidden', !smart);
+
   win_rate.disabled = !single;
   risk_reward.disabled = !single;
 }
@@ -247,6 +288,16 @@ function getPayload() {
       risk_reward: +risk_reward.value,
       risk_per_trade_pct: +risk_per_trade_pct.value / 100,
     },
+    smart_mode: {
+      enabled: activeMode === 'smart',
+      consistency_pct: +consistency_pct.value / 100,
+      max_trades_per_day: +max_trades_per_day.value,
+      max_days: +max_days.value,
+      rr_min: +rr_min.value,
+      rr_max: +rr_max.value,
+      rr_step: +rr_step.value,
+      max_risk_per_trade_pct: +max_risk_per_trade_pct.value / 100,
+    },
   };
 }
 
@@ -258,6 +309,7 @@ function shadedColor(outcome, index, total) {
 }
 
 function draw(res) {
+  lastResult = res;
   const total = Math.max(1, res.passed + res.failed + res.timeout);
   stats.innerHTML = `
     <div class="stat"><small>Passed</small><strong>${res.passed}</strong><small>${(res.pass_probability * 100).toFixed(1)}%</small></div>
@@ -281,9 +333,11 @@ function draw(res) {
     timeout: res.path_outcomes.filter(o => o === 'timeout').length,
   };
 
-  const pointRadius = res.sampled_paths.length <= 25 ? 1.8 : res.sampled_paths.length <= 100 ? 1.2 : 0.8;
+  const useEod = activeMode === 'smart' && showEodOnly.checked && (res.sampled_eod_paths?.length);
+  const activePaths = useEod ? res.sampled_eod_paths : res.sampled_paths;
+  const pointRadius = activePaths.length <= 25 ? 1.8 : activePaths.length <= 100 ? 1.2 : 0.8;
 
-  const datasets = res.sampled_paths.map((path, i) => {
+  const datasets = activePaths.map((path, i) => {
     const outcome = res.path_outcomes[i];
     const idx = outcomeIndexes[outcome]++;
     return {
@@ -303,7 +357,7 @@ function draw(res) {
   const payload = getPayload();
   const successLevel = payload.initial_balance * (1 + payload.success_gain_pct);
   const failLevel = payload.initial_balance * (1 - payload.fail_loss_pct);
-  const flattened = res.sampled_paths.flat();
+  const flattened = activePaths.flat();
   const minPath = flattened.length ? Math.min(...flattened) : failLevel;
   const maxPath = flattened.length ? Math.max(...flattened) : successLevel;
 
@@ -317,7 +371,7 @@ function draw(res) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            title: (items) => `Tick ${items[0].parsed.x}`,
+            title: (items) => `${useEod ? 'Day' : 'Tick'} ${items[0].parsed.x}`,
             label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
           }
         }
@@ -325,7 +379,7 @@ function draw(res) {
       scales: {
         x: {
           type: 'linear',
-          title: { display: true, text: 'Tick', color: '#9aabd4' },
+          title: { display: true, text: useEod ? 'Day' : 'Tick', color: '#9aabd4' },
           ticks: { color: '#c5d2f2', precision: 0 },
           grid: { color: 'rgba(148,163,184,0.08)' }
         },
@@ -533,12 +587,14 @@ function updateTrailingHint() {
 trailing_drawdown_enabled.addEventListener('change', updateTrailingHint);
 singleTab.addEventListener('click', () => setMode('single'));
 heatmapTab.addEventListener('click', () => setMode('heatmap'));
+smartTab.addEventListener('click', () => setMode('smart'));
 updateTrailingHint();
 setMode('single');
+showEodOnly.addEventListener('change', () => { if (lastResult && activeMode === 'smart') draw(lastResult); });
 
 run.onclick = async () => {
   if (activeJobId) return;
-  if (activeMode === 'single') {
+  if (activeMode === 'single' || activeMode === 'smart') {
     await startSimulation(getPayload());
     return;
   }
@@ -554,7 +610,7 @@ run.onclick = async () => {
 };
 
 retry.onclick = async () => {
-  if (activeMode === 'single') {
+  if (activeMode === 'single' || activeMode === 'smart') {
     const payload = lastPayload || getPayload();
     await startSimulation(payload);
     return;
